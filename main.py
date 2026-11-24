@@ -15,6 +15,7 @@ no randomness, no input read. After writing, the program reads the file
 back and refuses to finish unless the bytes on disk match exactly.
 """
 
+import hashlib
 import os
 
 ENTRY = (
@@ -27,6 +28,11 @@ ENTRY = (
 
 OUTPUT_PATH = "/output/entry.txt"
 MAX_CHARS = 400
+
+# Pinned digest of the exact bytes this program must write: the 259-char
+# two-line entry encoded as UTF-8 (259 bytes, pure ASCII).
+EXPECTED_SHA256 = "eaf074845bff7faca84a4a554e21b7b646082a79fdae09a742d78b25a2a0d994"
+EXPECTED_BYTES = 259
 
 
 def main() -> None:
@@ -41,16 +47,28 @@ def main() -> None:
     os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
     with open(OUTPUT_PATH, "w", encoding="utf-8", newline="") as f:
         f.write(text)
-    # Read-back gate: prove the file on disk is byte-for-byte the entry.
-    with open(OUTPUT_PATH, "r", encoding="utf-8", newline="") as f:
-        written = f.read()
-    if written != text:
+    # Read-back gate: what landed on disk must match the entry exactly —
+    # exact bytes, exact length (259), and the pinned sha256 digest.
+    with open(OUTPUT_PATH, "rb") as f:
+        raw = f.read()
+    if raw != text.encode("utf-8"):
         raise SystemExit("read-back mismatch: entry.txt is not the entry")
-    if not 1 <= len(written) <= MAX_CHARS:
+    if len(raw) != EXPECTED_BYTES:
         raise SystemExit(
-            f"entry.txt is {len(written)} chars, outside the 1-{MAX_CHARS} gate"
+            f"read-back length: found {len(raw)} bytes, expected {EXPECTED_BYTES}"
         )
+    digest = hashlib.sha256(raw).hexdigest()
+    if digest != EXPECTED_SHA256:
+        raise SystemExit(
+            f"read-back sha256: found {digest}, expected {EXPECTED_SHA256}"
+        )
+    if not 1 <= len(raw) <= MAX_CHARS:
+        raise SystemExit(
+            f"entry.txt is {len(raw)} chars, outside the 1-{MAX_CHARS} gate"
+        )
+    print(f"verified: {len(text)} chars, sha256 {digest}")
 
 
 if __name__ == "__main__":
     main()
+
